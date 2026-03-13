@@ -1,0 +1,21 @@
+Project_Root/
+├── pc_workspace/
+│   ├── main_pc.py
+│   ├── vision/
+│   │   ├── camera_capture.py
+│   │   ├── aruco_detector.py
+│   │   └── camera_calibration.py
+│   ├── navigation/
+│   │   └── path_planning.py
+│   └── communication/
+│       └── tcp_client.py
+└── robot_workspace/
+    ├── main_robot.py
+    ├── communication/
+    │   └── tcp_server.py
+    ├── hardware/
+    │   ├── motor.py
+    │   ├── servo.py
+    │   └── ultrasonic.py
+    └── logic/
+        └── obstacle_avoidance.py
