@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find C:UsersNielsOneDriveDocumentsschools8mechatroniccode_projet -maxdepth 4 ! -path */venv/* -type d)"
+    ]
+  }
+}
