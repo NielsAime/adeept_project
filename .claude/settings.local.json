@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find C:UsersNielsOneDriveDocumentsschools8mechatroniccode_projet -maxdepth 4 ! -path */venv/* -type d)"
+      "Bash(find C:UsersNielsOneDriveDocumentsschools8mechatroniccode_projet -maxdepth 4 ! -path */venv/* -type d)",
+      "Bash(find /c/Users/Niels/OneDrive/Documents/school/s8/mechatronic/code_projet -type f -name *.md -o -name *.txt -o -name *.rst)",
+      "Bash(find /c/Users/Niels/OneDrive/Documents/school/s8/mechatronic/code_projet/Adeept_PiCar-Pro-V2.0-20251215 -type f \\\\\\(-name *.py -o -name *.md -o -name *.txt \\\\\\))",
+      "Bash(xargs wc:*)"
     ]
   }
 }
