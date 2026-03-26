@@ -1,11 +1,16 @@
 """
 Calcul de la commande de navigation à partir de l'état ArUco.
 
-Algorithme : contrôle proportionnel 2 phases
+Algorithme : contrôle proportionnel 2 phases avec hystérésis
   1. ROTATE  : le robot tourne sur place pour s'orienter vers la cible
-  2. MOVE    : le robot avance avec une correction angulaire fine
+               → quitte ROTATE quand |angle_error| < ALIGN_OK_THRESHOLD
+  2. MOVE    : le robot avance avec correction angulaire via servo de direction
+               → re-entre en ROTATE si |angle_error| > REALIGN_THRESHOLD
   3. GRASP   : distance suffisamment faible → déclenche la saisie
   4. DONE    : tâche terminée
+
+L'hystérésis (deux seuils distincts) évite l'oscillation permanente entre les
+phases qui se produisait avec un seuil unique (~7°).
 """
 
 import numpy as np
@@ -29,10 +34,11 @@ class NavigationCommand:
 
 class Navigator:
     # -----------------------------------------------------------------------
-    # Seuils
+    # Seuils (hystérésis)
     # -----------------------------------------------------------------------
-    DIST_THRESHOLD  = 0.07   # distance (m) en dessous de laquelle on déclenche GRASP
-    ANGLE_THRESHOLD = 0.12   # erreur angulaire (rad, ~7°) en dessous de laquelle on avance
+    DIST_THRESHOLD    = 0.07   # distance (m) → déclenchement GRASP
+    ALIGN_OK_THRESHOLD  = 0.15   # rad (~9°)  : ROTATE → MOVE (cible bien visée)
+    REALIGN_THRESHOLD   = 0.40   # rad (~23°) : MOVE → ROTATE (dérive trop forte)
 
     # -----------------------------------------------------------------------
     # Gains proportionnels
@@ -40,7 +46,7 @@ class Navigator:
     KP_ANGLE  = 85.0   # gain rotation  (rad → %PWM)
     KP_SPEED  = 55.0   # gain avance    (m   → %PWM)
     MAX_SPEED = 70.0   # vitesse max PWM
-    MIN_ROTATE_SPEED = 35.0  # vitesse min en rotation (évite ramper vers l'angle)
+    MIN_ROTATE_SPEED = 35.0  # vitesse min en rotation (évite de ramper vers l'angle)
 
     def __init__(self):
         self.phase = Phase.ROTATE
@@ -70,9 +76,16 @@ class Navigator:
             self.phase = Phase.GRASP
             return NavigationCommand(0.0, 0.0, Phase.GRASP)
 
-        # --- Phase ROTATE : rotation sur place si erreur angulaire trop grande
-        if abs(state.angle_error) > self.ANGLE_THRESHOLD:
+        angle = abs(state.angle_error)
+
+        # --- Transitions de phase (hystérésis) -----------------------------
+        if self.phase == Phase.ROTATE and angle < self.ALIGN_OK_THRESHOLD:
+            self.phase = Phase.MOVE
+        elif self.phase == Phase.MOVE and angle > self.REALIGN_THRESHOLD:
             self.phase = Phase.ROTATE
+
+        # --- Phase ROTATE : rotation sur place -----------------------------
+        if self.phase == Phase.ROTATE:
             # ω > 0 : tourne à gauche (right avance, left recule)
             omega = float(np.clip(
                 self.KP_ANGLE * state.angle_error,
@@ -87,12 +100,11 @@ class Navigator:
                 phase       = Phase.ROTATE
             )
 
-        # --- Phase MOVE : avance avec correction angulaire fine ------------
-        self.phase = Phase.MOVE
+        # --- Phase MOVE : avance avec correction angulaire via servo -------
         v     = float(np.clip(self.KP_SPEED * state.distance, 0.0, self.MAX_SPEED))
         omega = float(np.clip(
-            self.KP_ANGLE * state.angle_error * 0.4,
-            -self.MAX_SPEED * 0.4, self.MAX_SPEED * 0.4
+            self.KP_ANGLE * state.angle_error * 0.7,
+            -self.MAX_SPEED * 0.7, self.MAX_SPEED * 0.7
         ))
         left  = float(np.clip(v - omega, -self.MAX_SPEED, self.MAX_SPEED))
         right = float(np.clip(v + omega, -self.MAX_SPEED, self.MAX_SPEED))

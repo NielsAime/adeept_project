@@ -5,7 +5,12 @@
       "Bash(find /c/Users/Niels/OneDrive/Documents/school/s8/mechatronic/code_projet -type f -name *.md -o -name *.txt -o -name *.rst)",
       "Bash(find /c/Users/Niels/OneDrive/Documents/school/s8/mechatronic/code_projet/Adeept_PiCar-Pro-V2.0-20251215 -type f \\\\\\(-name *.py -o -name *.md -o -name *.txt \\\\\\))",
       "Bash(xargs wc:*)",
-      "Bash(grep -E '\\\\.\\(py|json|txt|yaml|yml|config|ini|cfg\\)$')"
+      "Bash(grep -E '\\\\.\\(py|json|txt|yaml|yml|config|ini|cfg\\)$')",
+      "Bash(xargs grep:*)",
+      "Bash(find /c/Users/Niels/OneDrive/Documents/school/s8/mechatronic/code_projet/Adeept_PiCar-Pro-V2.0-20251215/ -type f -name *servo* -o -name *Servo*)",
+      "Bash(find /c/Users/Niels/OneDrive/Documents/school/s8/mechatronic/code_projet/Adeept_PiCar-Pro-V2.0-20251215/ -type f \\\\\\(-name main.py -o -name *robot* -o -name *control* \\\\\\))",
+      "Bash(grep -E \"\\\\.\\(py\\)$\")",
+      "Bash(find /c/Users/Niels/OneDrive/Documents/school/s8/mechatronic/code_projet/Adeept_PiCar-Pro-V2.0-20251215/Code -type f -name *.py)"
     ]
   }
 }
