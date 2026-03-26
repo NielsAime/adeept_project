@@ -1,81 +1,65 @@
 """
-Contrôle des moteurs à courant continu via un driver L298N.
-Tourne sur Raspberry Pi avec RPi.GPIO.
+Contrôle des moteurs via PCA9685 (I2C).
+Spécifique au Adeept PiCar-Pro V2.0
 
-Câblage par défaut (Adeept AWR / similaire) — à adapter selon votre modèle :
-  ENA → GPIO 17   (PWM moteurs gauche)
-  IN1 → GPIO 27   (sens moteurs gauche : avant)
-  IN2 → GPIO 22   (sens moteurs gauche : arrière)
+Adresse I2C du PCA9685 moteurs : 0x5f
+  M1 : channels 15 (IN1) / 14 (IN2) — gauche
+  M2 : channels 12 (IN1) / 13 (IN2) — droite
 
-  ENB → GPIO 13   (PWM moteurs droite)
-  IN3 → GPIO 24   (sens moteurs droite : avant)
-  IN4 → GPIO 25   (sens moteurs droite : arrière)
+Sens physique : les deux moteurs sont câblés "inversés" sur ce robot
+(M1_Direction = M2_Direction = -1 dans le code officiel Adeept).
+Convention : speed = +100 → avant, speed = -100 → arrière.
 """
 
-import RPi.GPIO as GPIO
+from board import SCL, SDA
+import busio
+from adafruit_pca9685 import PCA9685
+from adafruit_motor import motor as dc_motor
 
 
 class MotorController:
-    # Pins GPIO (mode BCM) — modifier si nécessaire
-    ENA = 17;  IN1 = 27;  IN2 = 22
-    ENB = 13;  IN3 = 24;  IN4 = 25
+    # Channels PCA9685
+    M1_IN1 = 15  # gauche +
+    M1_IN2 = 14  # gauche -
+    M2_IN1 = 12  # droite +
+    M2_IN2 = 13  # droite -
 
-    PWM_FREQ = 1000   # Hz
+    FREQ = 50
 
     def __init__(self):
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setwarnings(False)
+        i2c = busio.I2C(SCL, SDA)
+        self._pwm = PCA9685(i2c, address=0x5f)
+        self._pwm.frequency = self.FREQ
 
-        for pin in (self.ENA, self.IN1, self.IN2,
-                    self.ENB, self.IN3, self.IN4):
-            GPIO.setup(pin, GPIO.OUT)
-            GPIO.output(pin, GPIO.LOW)
+        self._motor_left = dc_motor.DCMotor(
+            self._pwm.channels[self.M1_IN1],
+            self._pwm.channels[self.M1_IN2]
+        )
+        self._motor_left.decay_mode = dc_motor.SLOW_DECAY
 
-        self._pwm_left  = GPIO.PWM(self.ENA, self.PWM_FREQ)
-        self._pwm_right = GPIO.PWM(self.ENB, self.PWM_FREQ)
-        self._pwm_left.start(0)
-        self._pwm_right.start(0)
+        self._motor_right = dc_motor.DCMotor(
+            self._pwm.channels[self.M2_IN1],
+            self._pwm.channels[self.M2_IN2]
+        )
+        self._motor_right.decay_mode = dc_motor.SLOW_DECAY
 
-    # ------------------------------------------------------------------
     def set_left(self, speed: float) -> None:
-        """
-        Commande le groupe de moteurs gauche.
-        speed : -100 (arrière) à +100 (avant)
-        """
+        """speed : -100 (arrière) à +100 (avant)"""
         speed = max(-100.0, min(100.0, speed))
-        if speed >= 0:
-            GPIO.output(self.IN1, GPIO.HIGH)
-            GPIO.output(self.IN2, GPIO.LOW)
-        else:
-            GPIO.output(self.IN1, GPIO.LOW)
-            GPIO.output(self.IN2, GPIO.HIGH)
-        self._pwm_left.ChangeDutyCycle(abs(speed))
+        # Les moteurs sont montés en sens inverse (M1_Direction=-1 dans Adeept)
+        self._motor_left.throttle = -(speed / 100.0)
 
     def set_right(self, speed: float) -> None:
-        """
-        Commande le groupe de moteurs droit.
-        speed : -100 (arrière) à +100 (avant)
-        """
+        """speed : -100 (arrière) à +100 (avant)"""
         speed = max(-100.0, min(100.0, speed))
-        if speed >= 0:
-            GPIO.output(self.IN3, GPIO.HIGH)
-            GPIO.output(self.IN4, GPIO.LOW)
-        else:
-            GPIO.output(self.IN3, GPIO.LOW)
-            GPIO.output(self.IN4, GPIO.HIGH)
-        self._pwm_right.ChangeDutyCycle(abs(speed))
+        # Les moteurs sont montés en sens inverse (M2_Direction=-1 dans Adeept)
+        self._motor_right.throttle = -(speed / 100.0)
 
     def stop(self) -> None:
         """Coupe tous les moteurs."""
-        self._pwm_left.ChangeDutyCycle(0)
-        self._pwm_right.ChangeDutyCycle(0)
-        GPIO.output(self.IN1, GPIO.LOW)
-        GPIO.output(self.IN2, GPIO.LOW)
-        GPIO.output(self.IN3, GPIO.LOW)
-        GPIO.output(self.IN4, GPIO.LOW)
+        self._motor_left.throttle = 0
+        self._motor_right.throttle = 0
 
     def cleanup(self) -> None:
         self.stop()
-        self._pwm_left.stop()
-        self._pwm_right.stop()
-        GPIO.cleanup()
+        self._pwm.deinit()

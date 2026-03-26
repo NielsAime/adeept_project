@@ -23,7 +23,8 @@ import paramiko
 # Configuration — à adapter
 # ---------------------------------------------------------------------------
 ROBOT_USER  = 'adeept14'
-ROBOT_IP    = '192.168.X.X'   # <-- remplace par l'IP du robot sur ton réseau
+ROBOT_PASS  = 'raspberry'         # <-- ton mot de passe SSH
+ROBOT_IP    = '192.168.137.175'
 ROBOT_PORT  = 5000
 SSH_PORT    = 22
 
@@ -59,7 +60,7 @@ def launch_robot_ssh():
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
     try:
-        ssh.connect(ROBOT_IP, port=SSH_PORT, username=ROBOT_USER)
+        ssh.connect(ROBOT_IP, port=SSH_PORT, username=ROBOT_USER, password=ROBOT_PASS)
     except Exception as e:
         print(f"[LAUNCH] Echec connexion SSH : {e}")
         sys.exit(1)

@@ -37,12 +37,14 @@ class Navigator:
     # -----------------------------------------------------------------------
     # Gains proportionnels
     # -----------------------------------------------------------------------
-    KP_ANGLE = 85.0    # gain rotation  (rad → %PWM)
-    KP_SPEED = 55.0    # gain avance    (m   → %PWM)
+    KP_ANGLE  = 85.0   # gain rotation  (rad → %PWM)
+    KP_SPEED  = 55.0   # gain avance    (m   → %PWM)
     MAX_SPEED = 70.0   # vitesse max PWM
+    MIN_ROTATE_SPEED = 35.0  # vitesse min en rotation (évite ramper vers l'angle)
 
     def __init__(self):
         self.phase = Phase.ROTATE
+        self._last_cmd = NavigationCommand(0.0, 0.0, Phase.ROTATE)
 
     def compute(self, state) -> NavigationCommand:
         """
@@ -56,7 +58,7 @@ class Navigator:
         -------
         NavigationCommand avec left_speed, right_speed et la phase courante
         """
-        # Perte de vision → arrêt de sécurité
+        # Perte de vision → arrêt de sécurité immédiat
         if state is None:
             return NavigationCommand(0.0, 0.0, self.phase)
 
@@ -76,6 +78,9 @@ class Navigator:
                 self.KP_ANGLE * state.angle_error,
                 -self.MAX_SPEED, self.MAX_SPEED
             ))
+            # Vitesse minimale pour éviter de ramper vers l'angle cible
+            if abs(omega) < self.MIN_ROTATE_SPEED:
+                omega = float(np.sign(omega)) * self.MIN_ROTATE_SPEED
             return NavigationCommand(
                 left_speed  = -omega,
                 right_speed =  omega,

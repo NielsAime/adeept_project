@@ -27,9 +27,9 @@ from communication.tcp_client    import RobotClient
 # ---------------------------------------------------------------------------
 # Configuration — à adapter
 # ---------------------------------------------------------------------------
-ROBOT_IP      = '192.168.1.100'   # IP du Raspberry Pi du robot
+ROBOT_IP      = '192.168.137.175'  # IP du Raspberry Pi du robot
 ROBOT_PORT    = 5000
-CAMERA_INDEX  = 1                 # index de la webcam USB
+CAMERA_INDEX  = 0                # index de la webcam USB
 CALIB_PATH    = os.path.join(os.path.dirname(__file__), '..', 'camera_calibration_data.npz')
 LOOP_DELAY    = 0.05              # secondes entre deux itérations (~20 Hz)
 
@@ -47,6 +47,10 @@ def main():
         scene.release()
         return
 
+    print("[PC] Initialisation camera (2s)...")
+    for _ in range(40):          # ~2 s à 20 Hz : vide le buffer de démarrage
+        scene.get_frame()
+        time.sleep(0.05)
     print("[PC] Demarrage de la boucle de navigation. ESC pour quitter.")
 
     try:
@@ -60,39 +64,44 @@ def main():
             state, annotated = scene.update(frame)
 
             # --- Navigation ---------------------------------------------------
-            cmd = navigator.compute(state)
+            if state is not None:
+                cmd = navigator.compute(state)
 
-            # --- Envoi commande -----------------------------------------------
-            if cmd.phase == Phase.GRASP:
-                client.send_command({"type": "grasp"})
-                print("[PC] -> SAISIE declenchee")
-                # Attendre la fin de la sequence de saisie avant de continuer
-                time.sleep(3.0)
-                navigator.reset()
+                # --- Envoi commande -----------------------------------------------
+                if cmd.phase == Phase.GRASP:
+                    client.send_command({"type": "grasp"})
+                    print("[PC] -> SAISIE declenchee")
+                    time.sleep(3.0)
+                    navigator.reset()
 
-            elif cmd.phase == Phase.DONE:
-                client.send_command({"type": "stop"})
-                print("[PC] -> Mission terminee")
-                break
+                elif cmd.phase == Phase.DONE:
+                    client.send_command({"type": "stop"})
+                    print("[PC] -> Mission terminee")
+                    cv2.imshow('Robot Navigation', annotated)
+                    cv2.waitKey(1)
+                    break
 
-            else:
-                client.send_command({
-                    "type":  "move",
-                    "left":  round(cmd.left_speed),
-                    "right": round(cmd.right_speed),
-                })
+                else:
+                    left  = round(cmd.left_speed)
+                    right = round(cmd.right_speed)
+                    print(f"[PC] -> {cmd.phase.name}  dist={state.distance:.3f}m  angle={state.angle_error:.2f}rad  L={left} R={right}")
+                    client.send_command({
+                        "type":  "move",
+                        "left":  left,
+                        "right": right,
+                    })
 
-            # --- Affichage debug ---------------------------------------------
-            phase_color = {
-                Phase.ROTATE: (0, 200, 255),
-                Phase.MOVE:   (0, 255, 0),
-                Phase.GRASP:  (0, 0, 255),
-                Phase.DONE:   (200, 200, 200),
-            }.get(cmd.phase, (255, 255, 255))
+                # --- Affichage debug ---------------------------------------------
+                phase_color = {
+                    Phase.ROTATE: (0, 200, 255),
+                    Phase.MOVE:   (0, 255, 0),
+                    Phase.GRASP:  (0, 0, 255),
+                    Phase.DONE:   (200, 200, 200),
+                }.get(cmd.phase, (255, 255, 255))
 
-            cv2.putText(annotated, f"Phase: {cmd.phase.name}",
-                        (10, annotated.shape[0] - 15),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, phase_color, 2)
+                cv2.putText(annotated, f"Phase: {cmd.phase.name}",
+                            (10, annotated.shape[0] - 15),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, phase_color, 2)
 
             cv2.imshow('Robot Navigation', annotated)
 

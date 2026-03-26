@@ -1,46 +1,74 @@
 """
-Logique d'évitement / suppression d'obstacles.
+Logique de contournement d'obstacle.
 
-Comportement :
-  - Si le capteur ultrason détecte un obstacle à moins de THRESHOLD cm,
-    le robot s'arrête et utilise son bras pour repousser l'obstacle
-    latéralement, puis reprend sa mission.
+Stratégie : contournement en L (3 étapes, vitesse fixe)
+  1. Arrêt
+  2. Rotation droite ~90°  (dégager la trajectoire)
+  3. Avance latérale       (passer à côté de l'obstacle)
+  4. Rotation gauche ~90°  (reprendre le cap initial)
+  5. Reprise du contrôle ArUco (le navigateur se réoriente seul)
+
+Les durées TURN_90_S et BYPASS_FORWARD_S sont à calibrer selon
+la vitesse réelle du robot à AVOID_SPEED % PWM :
+  - Poser le robot, lancer test_motors.py à AVOID_SPEED
+  - Mesurer le temps pour 90° de rotation → TURN_90_S
+  - Mesurer le temps pour dépasser un obstacle de ~30 cm → BYPASS_FORWARD_S
 """
 
-from hardware.motor  import MotorController
-from hardware.servo  import ArmController
+import time
+from hardware.motor import MotorController
 
 
 class ObstacleAvoider:
-    THRESHOLD_CM = 20.0   # distance minimale avant obstacle (cm)
+    # --- Seuil de détection -------------------------------------------
+    THRESHOLD_CM = 25.0   # distance (cm) en dessous de laquelle on évite
 
-    def __init__(self, motors: MotorController, arm: ArmController):
+    # --- Paramètres de la manœuvre ------------------------------------
+    # À calibrer selon le robot (voir docstring ci-dessus)
+    AVOID_SPEED      = 50.0   # % PWM pendant la manœuvre
+    TURN_90_S        = 0.8    # secondes pour tourner ~90° à AVOID_SPEED
+    BYPASS_FORWARD_S = 1.0    # secondes pour dépasser l'obstacle latéralement
+
+    def __init__(self, motors: MotorController):
         self.motors = motors
-        self.arm    = arm
 
     def is_obstacle(self, distance_cm: float) -> bool:
         """Retourne True si un obstacle est détecté à portée."""
         return 0.0 < distance_cm < self.THRESHOLD_CM
 
-    def push_obstacle(self) -> None:
+    def bypass(self) -> None:
         """
-        Séquence pour repousser l'obstacle avec le bras :
-          1. Arrêt des moteurs
-          2. Extension du bras à l'horizontale
-          3. Balayage latéral (gauche → droite)
-          4. Retour position repos
+        Exécute la manœuvre complète de contournement.
+        Bloquant (~2 × TURN_90_S + BYPASS_FORWARD_S secondes).
+        Après cette méthode, le robot reprend son cap initial décalé
+        latéralement ; le navigateur ArUco prend le relais pour
+        se réorienter vers la cible.
         """
-        print(f"[Obstacle] Obstacle detecte — repousse avec le bras")
+        print("[Obstacle] Obstacle détecté — contournement à droite")
+
+        # 1. Arrêt
         self.motors.stop()
+        time.sleep(0.3)
 
-        # Extension du bras horizontale (angle épaule ~45°, coude ~90°)
-        self.arm.set_all([90, 45, 90, 90])
+        # 2. Rotation droite ~90° (gauche avance, droite recule)
+        self.motors.set_left( self.AVOID_SPEED)
+        self.motors.set_right(-self.AVOID_SPEED)
+        time.sleep(self.TURN_90_S)
+        self.motors.stop()
+        time.sleep(0.2)
 
-        # Balayage : rotation base gauche puis droite
-        self.arm.set_angle(0, 130, pause=0.4)   # gauche
-        self.arm.set_angle(0,  50, pause=0.4)   # droite
-        self.arm.set_angle(0,  90, pause=0.3)   # centre
+        # 3. Avance latérale pour passer à côté de l'obstacle
+        self.motors.set_left(self.AVOID_SPEED)
+        self.motors.set_right(self.AVOID_SPEED)
+        time.sleep(self.BYPASS_FORWARD_S)
+        self.motors.stop()
+        time.sleep(0.2)
 
-        # Retour position repos
-        self.arm.home()
-        print("[Obstacle] Obstacle ecarte — reprise de la mission")
+        # 4. Rotation gauche ~90° pour reprendre le cap initial
+        self.motors.set_left(-self.AVOID_SPEED)
+        self.motors.set_right( self.AVOID_SPEED)
+        time.sleep(self.TURN_90_S)
+        self.motors.stop()
+        time.sleep(0.3)
+
+        print("[Obstacle] Manœuvre terminée — reprise navigation ArUco")
