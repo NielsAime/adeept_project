@@ -1,81 +1,69 @@
 """
-Contrôle du bras robotique par servomoteurs (PWM 50 Hz).
-Tourne sur Raspberry Pi avec RPi.GPIO.
+Contrôle du bras robotique via PCA9685 (I2C, adresse 0x5f).
+Adeept PiCar-Pro V2.0 — même chip que les moteurs et le servo de direction.
 
-Câblage par défaut — à adapter selon votre modèle Adeept :
-  PIN_BASE     → GPIO 11   (rotation base)
-  PIN_SHOULDER → GPIO 13   (épaule)
-  PIN_ELBOW    → GPIO 15   (coude)
-  PIN_GRIPPER  → GPIO 16   (pince)
+Canaux PCA9685 du bras :
+  Canal 1 → base     (rotation gauche/droite)
+  Canal 2 → épaule   (haut/bas)
+  Canal 3 → coude    (haut/bas)
+  Canal 4 → pince    (ouverture/fermeture)
 
-Plage duty cycle : 2.5 % (0°) à 12.5 % (180°)
+L'instance PCA9685 est passée depuis MotorController pour éviter
+une double initialisation du chip.
 """
 
 import time
-import RPi.GPIO as GPIO
+import numpy as np
+from adafruit_pca9685 import PCA9685
+from adafruit_motor import servo as adafruit_servo
+from hardware.arm_ik import fk, ik, is_reachable
 
 
 class ArmController:
-    # Pins GPIO (mode BCM)
-    PIN_BASE     = 11
-    PIN_SHOULDER = 13
-    PIN_ELBOW    = 15
-    PIN_GRIPPER  = 16
+    # Canaux PCA9685 [base, épaule, coude, pince]
+    CHANNELS = [1, 2, 3, 4]
 
-    PWM_FREQ = 50   # Hz (standard servos)
+    # Plage d'impulsions standard pour servos Adeept
+    MIN_PULSE = 500
+    MAX_PULSE = 2400
 
-    # Séquences d'angles [base, épaule, coude, pince]
-    POS_HOME           = [90, 90,  90,  90]   # position de repos
-    POS_GRASP_APPROACH = [90, 60, 120,  90]   # bras tendu vers l'objet
-    POS_GRASP_CLOSE    = [90, 60, 120, 160]   # pince fermée sur l'objet
-    POS_GRASP_LIFT     = [90, 90,  90, 160]   # lever l'objet
+    # Positions prédéfinies [base, épaule, coude, pince]
+    POS_HOME           = [90, 90,  90,  90]
+    POS_GRASP_APPROACH = [90, 60, 120,  90]
+    POS_GRASP_CLOSE    = [90, 60, 120, 160]
+    POS_GRASP_LIFT     = [90, 90,  90, 160]
 
-    def __init__(self):
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setwarnings(False)
-
-        self._pins = [self.PIN_BASE, self.PIN_SHOULDER,
-                      self.PIN_ELBOW, self.PIN_GRIPPER]
-        self._pwms = []
-        for pin in self._pins:
-            GPIO.setup(pin, GPIO.OUT)
-            pwm = GPIO.PWM(pin, self.PWM_FREQ)
-            pwm.start(0)
-            self._pwms.append(pwm)
-
-    # ------------------------------------------------------------------
-    def _angle_to_duty(self, angle: float) -> float:
-        """Convertit un angle (0–180°) en duty cycle (2.5–12.5 %)."""
-        return 2.5 + (max(0.0, min(180.0, angle)) / 180.0) * 10.0
+    def __init__(self, pwm: PCA9685):
+        """
+        pwm : instance PCA9685 déjà initialisée (partagée avec MotorController).
+        """
+        self._servos = [
+            adafruit_servo.Servo(
+                pwm.channels[ch],
+                min_pulse=self.MIN_PULSE,
+                max_pulse=self.MAX_PULSE,
+                actuation_range=180,
+            )
+            for ch in self.CHANNELS
+        ]
 
     def set_angle(self, servo_idx: int, angle: float, pause: float = 0.3) -> None:
-        """Déplace un servo à l'angle donné puis coupe le signal (évite vibrations)."""
-        self._pwms[servo_idx].ChangeDutyCycle(self._angle_to_duty(angle))
+        """Déplace un servo (0=base, 1=épaule, 2=coude, 3=pince) à l'angle donné."""
+        self._servos[servo_idx].angle = max(0.0, min(180.0, angle))
         time.sleep(pause)
-        self._pwms[servo_idx].ChangeDutyCycle(0)
 
     def set_all(self, angles: list, pause: float = 0.5) -> None:
-        """Déplace tous les servos simultanément."""
+        """Déplace tous les servos simultanément puis attend."""
         for i, angle in enumerate(angles):
-            self._pwms[i].ChangeDutyCycle(self._angle_to_duty(angle))
+            self._servos[i].angle = max(0.0, min(180.0, angle))
         time.sleep(pause)
-        for pwm in self._pwms:
-            pwm.ChangeDutyCycle(0)
 
-    # ------------------------------------------------------------------
-    # Séquences de haut niveau
-    # ------------------------------------------------------------------
     def home(self) -> None:
         """Retourne en position de repos."""
         self.set_all(self.POS_HOME)
 
     def grasp(self) -> None:
-        """
-        Séquence complète de saisie :
-          1. Approche de l'objet
-          2. Fermeture de la pince
-          3. Lever l'objet
-        """
+        """Séquence complète de saisie : approche → fermeture → lever."""
         print("[Bras] Approche...")
         self.set_all(self.POS_GRASP_APPROACH)
         print("[Bras] Fermeture pince...")
@@ -86,11 +74,52 @@ class ArmController:
 
     def release(self) -> None:
         """Ouvre la pince et retourne en position de repos."""
-        self.set_angle(3, 90)   # ouverture pince (servo index 3)
+        self.set_angle(3, 90)
         time.sleep(0.3)
         self.home()
 
+    def move_to_xyz(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        q0: list = None,
+        tol: float = 1e-3,
+        pause: float = 0.5,
+    ) -> bool:
+        """
+        Déplace le bout de la pince vers la position (x, y, z) en mètres
+        via cinématique inverse jacobienne.
+
+        Paramètres
+        ----------
+        x, y, z : coordonnées cible (repère robot — x devant, y gauche, z haut)
+        q0      : angles servo initiaux [pan°, shoulder°, elbow°].
+                  Défaut : angles actuels si connus, sinon [90, 90, 90].
+        tol     : précision acceptable (m)
+        pause   : temps d'attente après déplacement (s)
+
+        Retourne
+        --------
+        True si l'IK a convergé, False si la cible était hors portée ou
+        si la précision n'a pas pu être atteinte (le bras s'est quand même
+        déplacé vers la meilleure position trouvée).
+        """
+        target = np.array([x, y, z], dtype=float)
+
+        q_init = np.array(q0, dtype=float) if q0 is not None else np.array([90.0, 90.0, 90.0])
+        q_sol, err, ok = ik(target, q0=q_init, tol=tol)
+
+        if not ok:
+            print(f"[IK] Avertissement : convergence insuffisante (err={err:.4f} m) "
+                  f"pour cible ({x:.3f}, {y:.3f}, {z:.3f})")
+
+        # Déplacer les servos pan (0), shoulder (1), elbow (2)
+        for idx in range(3):
+            self._servos[idx].angle = max(0.0, min(180.0, float(q_sol[idx])))
+        time.sleep(pause)
+
+        return ok
+
     def cleanup(self) -> None:
         self.home()
-        for pwm in self._pwms:
-            pwm.stop()

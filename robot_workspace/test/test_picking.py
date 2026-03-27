@@ -51,9 +51,19 @@ SONAR_FREQ_HZ  = 10      # frequence de lecture du capteur
 
 
 def main():
+    print("[DEBUG] Demarrage main()")
+
+    print("[DEBUG] Initialisation MotorController...")
     motors = MotorController()
-    arm    = ArmController()
+    print("[DEBUG] MotorController OK")
+
+    print("[DEBUG] Initialisation ArmController...")
+    arm    = ArmController(motors._pwm)
+    print("[DEBUG] ArmController OK")
+
+    print("[DEBUG] Initialisation UltrasonicSensor...")
     sonar  = UltrasonicSensor()
+    print("[DEBUG] UltrasonicSensor OK")
 
     picker = ObstaclePicker(motors, arm, sonar)
     picker.THRESHOLD_CM = THRESHOLD_CM
@@ -66,6 +76,7 @@ def main():
     print("Ctrl+C pour arreter.\n")
 
     # Initialiser le bras en position home
+    print("[DEBUG] init_arm()...")
     picker.init_arm()
     time.sleep(1.0)
 
@@ -73,6 +84,7 @@ def main():
 
     try:
         # Depart : avance tout droit
+        print("[DEBUG] Envoi commande moteurs...")
         motors.set_left(FORWARD_SPEED)
         motors.set_right(FORWARD_SPEED)
         print("[Test] Avance...")
