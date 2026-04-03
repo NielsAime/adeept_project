@@ -27,8 +27,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 from communication.tcp_server      import CommandServer
 from hardware.motor                import MotorController
 from hardware.steering             import SteeringServo
+from hardware.servo                import ArmController
 from hardware.ultrasonic           import UltrasonicSensor
 from logic.obstacle_avoidance      import ObstacleAvoider
+import aruco_arm as _aruco_arm
 
 PORT = 5000
 
@@ -61,6 +63,7 @@ def differential_to_car(left: float, right: float, max_steer: float):
 def main():
     motors   = MotorController()
     steering = SteeringServo(motors._pwm)
+    arm      = ArmController(motors._pwm)
     sonar    = UltrasonicSensor()
     avoider  = ObstacleAvoider(motors, steering)
     server   = CommandServer(PORT)
@@ -71,7 +74,21 @@ def main():
     def on_command(cmd: dict) -> None:
         cmd_type = cmd.get("type")
 
-        with _hardware_lock:
+        # ── Déclenchement du workflow aruco_arm ───────────────────────────
+        if cmd_type == "start_pick":
+            def _pick_thread():
+                print("[Robot] Workflow aruco_arm démarré")
+                with _hardware_lock:
+                    _aruco_arm.run(motors, steering, arm)
+                print("[Robot] Workflow aruco_arm terminé")
+            threading.Thread(target=_pick_thread, daemon=True).start()
+            return
+
+        # ── Commandes de navigation (ignorées si aruco_arm tourne) ────────
+        if not _hardware_lock.acquire(blocking=False):
+            print(f"[Robot] Occupé (aruco_arm) — commande ignorée : {cmd_type}")
+            return
+        try:
             if cmd_type == "stop":
                 motors.stop()
                 steering.center()
@@ -83,13 +100,11 @@ def main():
                 speed_sum = left + right
 
                 if abs(speed_sum) < ROTATION_THRESHOLD:
-                    # Rotation sur place : commande différentielle directe
                     motors.set_left(left)
                     motors.set_right(right)
                     steering.center()
                     print(f"[Robot] ROTATE left={left:.0f} right={right:.0f}")
                 else:
-                    # Avance : vitesse moyenne + servo de direction
                     speed, steer = differential_to_car(left, right, steering.MAX_STEER)
                     steering.steer(steer)
                     motors.set_left(speed)
@@ -103,6 +118,8 @@ def main():
 
             else:
                 print(f"[Robot] Commande inconnue : {cmd}")
+        finally:
+            _hardware_lock.release()
 
     server.on_command(on_command)
 

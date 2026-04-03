@@ -33,12 +33,16 @@ H_SHOULDER  = 0.10    # m  hauteur du joint épaule / sol
 #   ELBOW_ZERO_DEG    : servo ?°  → avant-bras tendu dans le prolongement du bras
 #                       Estimé à 180° (servo en butée haute = tendu).
 #
-PAN_CENTER_DEG    = 90.0    # non critique, rarement à changer
-SHOULDER_ZERO_DEG = 90.0    # [À CALIBRER]
-ELBOW_ZERO_DEG    = 180.0   # [À CALIBRER — estimé]
+PAN_CENTER_DEG    = 90.0    # servo 90° → regard droit devant (canal 1)
+SHOULDER_ZERO_DEG = 180.0   # servo 180° → bras horizontal vers l'avant
+#                             servo 90°  → vertical (orthogonal au sol)
+#                             servo 0°   → horizontal vers l'arrière
+ELBOW_ZERO_DEG    = 180.0   # servo 180° → coude tendu (avant-bras dans le prolongement)
+#                             servo 90°  → angle droit, avant-bras pointe vers le bas
+#                             servo 10°  → coude replié (minimum physique)
 
 # ─── Limites servo (°) ────────────────────────────────────────────────────────
-SERVO_MIN = np.array([0.0,   0.0,   0.0])
+SERVO_MIN = np.array([0.0,   0.0,  10.0])   # coude : min 10° (sinon collision)
 SERVO_MAX = np.array([180.0, 180.0, 180.0])
 
 _DEG = np.pi / 180.0
@@ -59,8 +63,8 @@ def fk(q: np.ndarray) -> np.ndarray:
     p : array [x, y, z]  — position bout-pince en mètres
     """
     q_pan   = (q[0] - PAN_CENTER_DEG)    * _DEG   # + = gauche
-    theta_s = (q[1] - SHOULDER_ZERO_DEG) * _DEG   # + = monter
-    phi_e   = (ELBOW_ZERO_DEG - q[2])    * _DEG   # + = plier (0 = tendu)
+    theta_s = (SHOULDER_ZERO_DEG - q[1]) * _DEG   # + = monter (servo ↓ = bras monte)
+    phi_e   = (q[2] - ELBOW_ZERO_DEG)    * _DEG   # - = plier vers le bas (0 = tendu)
 
     # angle absolu de l'avant-bras / horizontal
     theta_f = theta_s + phi_e

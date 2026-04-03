@@ -20,7 +20,7 @@ Thumbs.db
 *.jpg
 *.png
 *.mp4
-*.claude
+.claude/
 camera_calibration_data.npz
 Adeept_PiCar-Pro-V2.0-20251215/
 

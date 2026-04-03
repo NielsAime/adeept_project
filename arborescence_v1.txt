@@ -1,21 +1,40 @@
-Project_Root/
-├── pc_workspace/
-│   ├── main_pc.py
-│   ├── vision/
-│   │   ├── camera_capture.py
-│   │   ├── aruco_detector.py
-│   │   └── camera_calibration.py
+code_projet/
+├── pc_worspace_client/             # Code tournant sur le PC (maître)
+│   └── main_pc.py                 # Boucle principale : vision → navigation → TCP
+│   └── vision/
+│   │   ├── aruco_detector.py      # Détection ArUco + calcul SceneState
+│   │   ├── camera_capture.py      # Capture flux caméra
+│   │   ├── camera_calibration.py  # Chargement de la calibration
+│   │   ├── compute_calibration.py # Calcul de la calibration (à lancer une fois)
+│   │   └── test_calibration.py    # Test de la calibration
 │   ├── navigation/
-│   │   └── path_planning.py
+│   │   └── path_planning.py       # Navigator : phases ROTATE / MOVE / GRASP / DONE
 │   └── communication/
-│       └── tcp_client.py
-└── robot_workspace/
-    ├── main_robot.py
-    ├── communication/
-    │   └── tcp_server.py
-    ├── hardware/
-    │   ├── motor.py
-    │   ├── servo.py
-    │   └── ultrasonic.py
-    └── logic/
-        └── obstacle_avoidance.py
+│       └── tcp_client.py          # Client TCP → envoi commandes JSON au robot
+│
+├── robot_workspace/                # Code tournant sur le Raspberry Pi (esclave)
+│   ├── main_robot.py              # Serveur TCP + thread ultrason + dispatch commandes
+│   ├── aruco_arm.py               # Scan ArUco en W + pick-and-place (bras seul)
+│   ├── communication/
+│   │   └── tcp_server.py          # Serveur TCP → réception commandes JSON
+│   ├── hardware/
+│   │   ├── motor.py               # Contrôle moteurs DC (PWM via PCA9685)
+│   │   ├── steering.py            # Servo de direction (roues avant)
+│   │   ├── servo.py               # Contrôleur bras (4 servos : pan/épaule/coude/pince)
+│   │   ├── arm_ik.py              # Cinématique inverse numérique (Jacobien, 3 DOF)
+│   │   └── ultrasonic.py          # Capteur ultrason HC-SR04
+│   ├── logic/
+│   │   ├── obstacle_avoidance.py  # Détection obstacle + manœuvre d'évitement
+│   │   └── obstacle_picking.py    # Pick-and-place d'obstacle (bouteille)
+│   └── test/
+│       ├── test_ik.py             # Tests cinématique inverse
+│       ├── test_motors.py         # Tests moteurs
+│       ├── test_ultrasonic.py     # Tests capteur ultrason
+│       ├── test_avoidance.py      # Tests évitement d'obstacle
+│       ├── test_picking.py        # Tests pick-and-place obstacle
+│       └── ultrasonic_arm.py      # Test intégration ultrason + bras
+│
+├── .gitignore
+├── arborescence_v1.txt
+├── requirement.txt
+└── README.md

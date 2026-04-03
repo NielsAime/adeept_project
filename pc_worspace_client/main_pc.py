@@ -69,10 +69,9 @@ def main():
 
                 # --- Envoi commande -----------------------------------------------
                 if cmd.phase == Phase.GRASP:
-                    client.send_command({"type": "grasp"})
-                    print("[PC] -> SAISIE declenchee")
-                    time.sleep(3.0)
-                    navigator.reset()
+                    client.send_command({"type": "start_pick"})
+                    print("[PC] -> Workflow aruco_arm declenche sur le Pi")
+                    navigator.phase = Phase.DONE
 
                 elif cmd.phase == Phase.DONE:
                     client.send_command({"type": "stop"})
